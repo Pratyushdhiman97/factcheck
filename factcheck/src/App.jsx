@@ -13,7 +13,7 @@ import Footer from './components/Footer';
 import './App.css';
 import './animations.css';
 
-const MODEL_NAME = "gemini-1.5-flash";
+const MODEL_NAME = "gemini-2.5-flash";
 const ENV_KEY = import.meta.env.VITE_GEMINI_KEY || "";
 
 const NewspaperBackground = () => (
