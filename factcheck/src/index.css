@@ -17,13 +17,12 @@ body {
   overflow-x: hidden;
 }
 
-/* Headings */
+/* Typography */
 h1, h2, h3, h4, h5, h6 {
   font-family: 'Orbitron', sans-serif;
   letter-spacing: 0.05em;
 }
 
-/* Paragraphs */
 p {
   font-family: 'Inter', sans-serif;
   color: #c0c0c0;
