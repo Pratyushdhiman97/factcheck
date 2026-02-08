@@ -20,7 +20,6 @@ serve(async (req) => {
       });
     }
 
-    // Using the keys you provided
     const NEWS_API_KEY = Deno.env.get('NEWS_API_KEY') || "95590055460d462bb390b1b0fccf98c6";
     const GNEWS_API_KEY = Deno.env.get('GNEWS_API_KEY') || "b92f914acf4ed99c48200b42c6381506";
     const GEMINI_KEY = Deno.env.get('GEMINI_API_KEY') || Deno.env.get('GEMINI_KEY') || "AIzaSyC7qwoYFRKUSVJh4XIsn6cDnbXl9ySnPDU";
@@ -31,7 +30,6 @@ serve(async (req) => {
 
     console.log(`[verify] Processing query: ${query}`);
 
-    // Helper to clean query for better search results
     const cleanQuery = (q: string) => {
       return q.replace(/[^\w\s]/gi, '').split(' ').slice(0, 8).join(' ');
     };
@@ -39,7 +37,7 @@ serve(async (req) => {
     const searchQuery = cleanQuery(query);
     let allArticles = [];
 
-    // Step 1: Fetch from NewsAPI (Everything)
+    // Step 1: Fetch from NewsAPI
     try {
       const newsRes = await fetch(`https://newsapi.org/v2/everything?q=${encodeURIComponent(searchQuery)}&language=en&sortBy=relevancy&pageSize=10&apiKey=${NEWS_API_KEY}`);
       if (newsRes.ok) {
@@ -52,14 +50,12 @@ serve(async (req) => {
             url: a.url 
           })));
         }
-      } else {
-        console.warn(`[verify] NewsAPI error: ${newsRes.status}`);
       }
     } catch (e) {
-      console.error("[verify] NewsAPI Everything failed", e);
+      console.error("[verify] NewsAPI failed", e);
     }
 
-    // Step 2: Fetch from GNews (Fallback/Cross-ref)
+    // Step 2: Fetch from GNews
     if (allArticles.length < 3) {
       try {
         const gnewsRes = await fetch(`https://gnews.io/api/v4/search?q=${encodeURIComponent(searchQuery)}&lang=en&max=5&apikey=${GNEWS_API_KEY}`);
@@ -79,32 +75,15 @@ serve(async (req) => {
       }
     }
 
-    // Step 3: Final Fallback - NewsAPI Top Headlines
-    if (allArticles.length === 0) {
-      try {
-        const topRes = await fetch(`https://newsapi.org/v2/top-headlines?q=${encodeURIComponent(searchQuery.split(' ')[0])}&language=en&apiKey=${NEWS_API_KEY}`);
-        if (topRes.ok) {
-          const topData = await topRes.json();
-          allArticles.push(...(topData.articles || []).map((a: any) => ({ 
-            title: a.title, 
-            desc: a.description || "", 
-            source: a.source.name, 
-            url: a.url 
-          })));
-        }
-      } catch (e) {
-        console.error("[verify] Top Headlines fallback failed", e);
-      }
-    }
-
+    // If absolutely no articles found, return early with a specific state
     if (allArticles.length === 0) {
       return new Response(JSON.stringify({ 
         verdict: "Unclear", 
-        reason: "No news articles found. The claim might be too recent, too obscure, or not covered by mainstream media.",
-        confidence: 10,
+        reason: "No news articles found for this claim. This usually means the topic is not being reported by major news outlets or the query is too specific.",
+        confidence: 0,
         verifiable_score: 0,
         trust_score: 0,
-        bias: { label: "Unknown", explanation: "Insufficient data to determine bias." },
+        bias: { label: "Unknown", explanation: "No data available to analyze bias." },
         tactics: ["No data available"],
         claims: [],
         sources: []
@@ -116,7 +95,6 @@ serve(async (req) => {
     const articleSnippets = allArticles.slice(0, 8).map(a => `[${a.source}] ${a.title}: ${a.desc}`).join('\n---\n');
 
     // Step 4: AI Analysis
-    console.log("[verify] Calling Gemini API for analysis...");
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`;
     const systemPrompt = `
       You are a professional fact-checker. Analyze the following claim based on the provided news snippets.
@@ -126,6 +104,8 @@ serve(async (req) => {
       Context from News Sources:
       ${articleSnippets}
 
+      IMPORTANT: If the provided news snippets do not contain enough information to verify the claim, set the verdict to "Unclear".
+      
       Return a valid JSON object with this structure:
       {
         "verdict": "True" | "False" | "Unclear" | "Developing",
@@ -149,22 +129,15 @@ serve(async (req) => {
       }),
     });
 
-    if (!geminiRes.ok) {
-      const errorText = await geminiRes.text();
-      console.error(`[verify] Gemini API error (${geminiRes.status}):`, errorText);
-      throw new Error(`AI Analysis Service is currently unavailable (Status ${geminiRes.status}).`);
-    }
+    if (!geminiRes.ok) throw new Error("AI Analysis Service failed.");
 
     const geminiData = await geminiRes.json();
     const resultText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
-    
-    if (!resultText) {
-      throw new Error("AI Analysis returned no content. This might be due to safety filters on the content.");
-    }
+    if (!resultText) throw new Error("AI Analysis returned no content.");
 
     const result = JSON.parse(resultText);
 
-    // Step 5: Save to History
+    // Save to History
     try {
       await supabase.from('verifications').insert({
         query: query,
@@ -178,7 +151,6 @@ serve(async (req) => {
       console.warn("[verify] History save failed:", dbError);
     }
 
-    // Ensure sources are populated from the actual articles found
     if (!result.sources || result.sources.length === 0) {
       result.sources = allArticles.slice(0, 5).map(a => ({ name: a.source, url: a.url }));
     }
