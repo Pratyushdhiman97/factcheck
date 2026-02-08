@@ -2,7 +2,12 @@ import React from "react";
 import "../App.css";
 
 const VerdictCard = ({ results }) => {
-  const { verdict, confidence, verifiable, trustScore } = results;
+  const verdict = results.verdict || "Unclear";
+
+  // force numbers + convert to %
+  const confidence = Number(results.confidence || 0) * 100;
+  const verifiable = Number(results.verifiable || 0) * 100;
+  const trustScore = Number(results.trustScore || 0) * 100;
 
   const getVerdictColor = (verdict) => {
     switch (verdict) {
@@ -18,43 +23,54 @@ const VerdictCard = ({ results }) => {
   };
 
   return (
-    <div className={`card verdict-card verdict-${verdict}`}>
-      <h3 style={{ color: getVerdictColor(verdict) }}>Verdict: {verdict}</h3>
+    <div className="card verdict-card">
+      <h3 style={{ color: getVerdictColor(verdict) }}>
+        Verdict: {verdict}
+      </h3>
 
+      {/* Confidence */}
       <div className="progress-bar">
         <label>Confidence</label>
         <div className="bar-bg">
           <div
             className="bar-fill"
-            const confidence = number(results.confidence||0)*100;
-            style={{ width: `${confidence}%`, background: "#0ff" }}
+            style={{
+              "--bar-width": `${confidence}%`,
+              background: "#0ff"
+            }}
           ></div>
         </div>
-        <span>{confidence}%</span>
+        <span>{confidence.toFixed(0)}%</span>
       </div>
 
+      {/* Verifiable */}
       <div className="progress-bar">
         <label>Verifiable</label>
         <div className="bar-bg">
           <div
             className="bar-fill"
-            const verifiable = number(results.verifiable||0)*100;
-            style={{ width: `${verifiable}%`, background: "#08f" }}
+            style={{
+              "--bar-width": `${verifiable}%`,
+              background: "#08f"
+            }}
           ></div>
         </div>
-        <span>{verifiable}%</span>
+        <span>{verifiable.toFixed(0)}%</span>
       </div>
 
+      {/* Trust */}
       <div className="progress-bar">
         <label>Trust Score</label>
         <div className="bar-bg">
           <div
             className="bar-fill"
-            const trustscore = number(results.trustscore||0)*100;
-            style={{ width: `${trustScore}*100%`, background: "#0f0" }}
+            style={{
+              "--bar-width": `${trustScore}%`,
+              background: "#0f0"
+            }}
           ></div>
         </div>
-        <span>{trustScore}%</span>
+        <span>{trustScore.toFixed(0)}%</span>
       </div>
     </div>
   );
