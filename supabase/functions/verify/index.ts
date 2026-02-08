@@ -20,7 +20,7 @@ serve(async (req) => {
       });
     }
 
-    // Provided API Keys
+    // API Keys
     const NEWS_API_KEY = "95590055460d462bb390b1b0fccf98c6";
     const GNEWS_API_KEY = "b92f914acf4ed99c48200b42c6381506";
     const GEMINI_KEY = "AIzaSyC7qwoYFRKUSVJh4XIsn6cDnbXl9ySnPDU";
@@ -29,25 +29,53 @@ serve(async (req) => {
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    console.log(`[verify] Cross-referencing news for: ${query}`);
+    console.log(`[verify] Processing query: ${query}`);
 
     // Step 1: Fetch from NewsAPI
-    const newsRes = await fetch(`https://newsapi.org/v2/everything?q=${encodeURIComponent(query)}&language=en&sortBy=relevancy&pageSize=5&apiKey=${NEWS_API_KEY}`);
-    const newsData = await newsRes.json();
+    let allArticles = [];
+    try {
+      const newsRes = await fetch(`https://newsapi.org/v2/everything?q=${encodeURIComponent(query)}&language=en&sortBy=relevancy&pageSize=5&apiKey=${NEWS_API_KEY}`);
+      if (newsRes.ok) {
+        const newsData = await newsRes.json();
+        allArticles.push(...(newsData.articles || []).map((a: any) => ({ title: a.title, desc: a.description, source: a.source.name, url: a.url })));
+      } else {
+        console.warn(`[verify] NewsAPI returned status: ${newsRes.status}`);
+      }
+    } catch (e) {
+      console.error("[verify] NewsAPI fetch failed", e);
+    }
     
     // Step 2: Fetch from GNews
-    const gnewsRes = await fetch(`https://gnews.io/api/v4/search?q=${encodeURIComponent(query)}&lang=en&max=5&apikey=${GNEWS_API_KEY}`);
-    const gnewsData = await gnewsRes.json();
+    try {
+      const gnewsRes = await fetch(`https://gnews.io/api/v4/search?q=${encodeURIComponent(query)}&lang=en&max=5&apikey=${GNEWS_API_KEY}`);
+      if (gnewsRes.ok) {
+        const gnewsData = await gnewsRes.json();
+        allArticles.push(...(gnewsData.articles || []).map((a: any) => ({ title: a.title, desc: a.description, source: a.source.name, url: a.url })));
+      } else {
+        console.warn(`[verify] GNews returned status: ${gnewsRes.status}`);
+      }
+    } catch (e) {
+      console.error("[verify] GNews fetch failed", e);
+    }
 
-    const allArticles = [
-      ...(newsData.articles || []).map((a: any) => ({ title: a.title, desc: a.description, source: a.source.name, url: a.url })),
-      ...(gnewsData.articles || []).map((a: any) => ({ title: a.title, desc: a.description, source: a.source.name, url: a.url }))
-    ];
+    if (allArticles.length === 0) {
+      return new Response(JSON.stringify({ 
+        verdict: "Unclear", 
+        reason: "No news articles found for this query.",
+        confidence: 0,
+        verifiable_score: 0,
+        trust_score: 0,
+        sources: [],
+        claims: []
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     const articleSnippets = allArticles.map(a => `[${a.source}] ${a.title}: ${a.desc}`).join('\n---\n');
 
     // Step 3: AI Analysis
-    console.log("[verify] Analyzing with Gemini 1.5 Flash");
+    console.log("[verify] Calling Gemini API...");
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`;
     const systemPrompt = `
       You are a professional fact-checker. Analyze the following claim based on the provided news snippets.
@@ -80,19 +108,35 @@ serve(async (req) => {
       }),
     });
 
+    if (!geminiRes.ok) {
+      const errorText = await geminiRes.text();
+      console.error(`[verify] Gemini API error (${geminiRes.status}):`, errorText);
+      throw new Error(`Gemini API returned ${geminiRes.status}`);
+    }
+
     const geminiData = await geminiRes.json();
     const resultText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
+    
+    if (!resultText) {
+      console.error("[verify] Gemini returned no content. Data:", JSON.stringify(geminiData));
+      throw new Error("Gemini returned an empty response. This might be due to safety filters.");
+    }
+
     const result = JSON.parse(resultText);
 
-    // Step 4: Save to History
-    await supabase.from('verifications').insert({
-      query: query,
-      verdict: result.verdict,
-      confidence: result.confidence,
-      trust_score: result.trust_score,
-      verifiable_score: result.verifiable_score,
-      bias_label: result.bias?.label
-    });
+    // Step 4: Save to History (Optional/Background)
+    try {
+      await supabase.from('verifications').insert({
+        query: query,
+        verdict: result.verdict,
+        confidence: result.confidence,
+        trust_score: result.trust_score,
+        verifiable_score: result.verifiable_score,
+        bias_label: result.bias?.label
+      });
+    } catch (dbError) {
+      console.warn("[verify] Failed to save to history:", dbError);
+    }
 
     // Ensure sources are populated
     if (!result.sources || result.sources.length === 0) {
@@ -104,8 +148,8 @@ serve(async (req) => {
     });
 
   } catch (error) {
-    console.error("[verify] Error:", error);
-    return new Response(JSON.stringify({ error: "Verification failed. Please try again." }), {
+    console.error("[verify] Critical Error:", error);
+    return new Response(JSON.stringify({ error: error.message || "Verification failed." }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
