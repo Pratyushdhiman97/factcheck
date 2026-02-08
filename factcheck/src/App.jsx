@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
-  ShieldCheck, WifiOff, Unlock, Key, BookOpen, ExternalLink
+  ShieldCheck, WifiOff, BookOpen, ExternalLink
 } from 'lucide-react';
 import Hero from './components/Hero';
 import InputSection from './components/InputSection';
@@ -25,18 +25,6 @@ export default function App() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
-  const [customKey, setCustomKey] = useState('');
-  const [showKeyInput, setShowKeyInput] = useState(false);
-
-  useEffect(() => {
-    const savedKey = localStorage.getItem('verifact_api_key');
-    if (savedKey) setCustomKey(savedKey);
-  }, []);
-
-  const saveKey = (key) => {
-    setCustomKey(key);
-    localStorage.setItem('verifact_api_key', key);
-  };
 
   const parseAIResponse = (raw) => {
     if (!raw || !raw.trim().startsWith('{')) {
@@ -46,10 +34,9 @@ export default function App() {
   };
 
   const fetchWithRetry = async (payload, retries = 3) => {
-    const activeKey = customKey || ENV_KEY;
-    if (!activeKey) throw new Error("No API key");
+    if (!ENV_KEY) throw new Error("No API key");
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${activeKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${ENV_KEY}`;
 
     try {
       const res = await fetch(url, {
@@ -123,27 +110,7 @@ Return STRICT JSON:
           <span className="font-bold text-lg">VeriFact</span>
         </div>
 
-        <div className="relative">
-          <button
-            onClick={() => setShowKeyInput(!showKeyInput)}
-            className="flex items-center gap-2 text-xs border px-3 py-1 rounded text-black bg-cyan-300"
-          >
-            {customKey || ENV_KEY ? <Unlock size={14}/> : <Key size={14}/>} 
-            {customKey || ENV_KEY ? 'Key Active' : 'Add Key'}
-          </button>
-
-          {showKeyInput && (
-            <div className="absolute right-0 mt-2 p-3 bg-zinc-900 border rounded">
-              <input
-                type="password"
-                value={customKey}
-                onChange={(e) => saveKey(e.target.value)}
-                placeholder="Gemini API Key"
-                className="bg-black p-2 text-xs w-60"
-              />
-            </div>
-          )}
-        </div>
+        {/* GEMINI KEY INPUT REMOVED */}
       </nav>
 
       {/* MAIN APP */}
