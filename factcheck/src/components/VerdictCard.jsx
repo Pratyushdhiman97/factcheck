@@ -26,7 +26,8 @@ const VerdictCard = ({ results }) => {
         <div className="bar-bg">
           <div
             className="bar-fill"
-            style={{ width: `${(confidence||0)*100}%`, background: "#0ff" }}
+            const confidence = number(results.confidence||0)*100;
+            style={{ width: `${confidence}%`, background: "#0ff" }}
           ></div>
         </div>
         <span>{confidence}%</span>
@@ -37,7 +38,8 @@ const VerdictCard = ({ results }) => {
         <div className="bar-bg">
           <div
             className="bar-fill"
-            style={{ width: `${(verifiable||0)*100}%`, background: "#08f" }}
+            const verifiable = number(results.verifiable||0)*100;
+            style={{ width: `${verifiable}%`, background: "#08f" }}
           ></div>
         </div>
         <span>{verifiable}%</span>
@@ -48,7 +50,8 @@ const VerdictCard = ({ results }) => {
         <div className="bar-bg">
           <div
             className="bar-fill"
-            style={{ width: `${(trustScore)||0}*100%`, background: "#0f0" }}
+            const trustscore = number(results.trustscore||0)*100;
+            style={{ width: `${trustScore}*100%`, background: "#0f0" }}
           ></div>
         </div>
         <span>{trustScore}%</span>
