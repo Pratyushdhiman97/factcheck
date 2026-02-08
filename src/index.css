@@ -1,6 +1,4 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
 /* ------------------- BASE ------------------- */
 * {
@@ -19,7 +17,6 @@ body {
   overflow-x: hidden;
 }
 
-/* ... keep existing custom styles below ... */
 h1, h2, h3, h4, h5, h6 {
   font-family: 'Orbitron', sans-serif;
   letter-spacing: 0.05em;

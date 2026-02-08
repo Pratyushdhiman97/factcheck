@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.95.3",
+    "@tailwindcss/postcss": "^4.1.18",
     "autoprefixer": "^10.4.24",
     "lucide-react": "^0.469.0",
     "postcss": "^8.5.6",
