@@ -290,4 +290,31 @@ JSON SCHEMA:
                   </div>
                 ))}
               </div>
-            </
+            </div>
+                        {/* Sources */}
+            {result.sources && result.sources.length > 0 && (
+              <div className="bg-slate-900/40 rounded-[3rem] border border-white/5 overflow-hidden">
+                <div className="p-8 border-b border-white/5 bg-white/[0.02] font-black uppercase text-[10px] text-slate-400 tracking-widest">
+                  Sources
+                </div>
+                <div className="p-8 space-y-4">
+                  {result.sources.map((s, i) => (
+                    <div key={i} className="p-4 bg-black/20 rounded-xl flex justify-between items-center">
+                      <p className="font-bold text-slate-200">{s.name}</p>
+                      <a href={s.url} target="_blank" rel="noopener noreferrer" className="text-blue-400 text-xs hover:underline flex items-center gap-1">
+                        Visit <ArrowRight size={14} />
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div> {/* End of results space-y-12 */}
+        )}
+      </main>
+    </div> /* End of App wrapper */
+  );
+}
+
+            
+
