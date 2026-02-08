@@ -309,7 +309,7 @@ JSON SCHEMA:
                 </div>
               </div>
             )}
-          </div> {/* End of results space-y-12 */}
+          </div> 
         )}
       </main>
     </div> /* End of App wrapper */
@@ -317,4 +317,5 @@ JSON SCHEMA:
 }
 
             
+
 
