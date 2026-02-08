@@ -39,26 +39,30 @@ export default function App() {
     const loadingToast = toast.loading("Analyzing claim across global sources...");
 
     try {
-      const { data, error: funcError } = await supabase.functions.invoke('verify', {
-        body: { query: input },
+      // Using the absolute URL for the Edge Function to ensure it works in Vercel
+      const FUNCTION_URL = "https://ffqlltuthkpbcjirsjbg.supabase.co/functions/v1/verify";
+      
+      const response = await fetch(FUNCTION_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabase.supabaseKey}`,
+          'apikey': supabase.supabaseKey
+        },
+        body: JSON.stringify({ query: input }),
       });
 
-      if (funcError) {
-        setError(funcError.message || "Function invocation failed.");
-        toast.error("Connection failed", { id: loadingToast });
-        return;
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Server responded with ${response.status}`);
       }
 
-      if (data.error) {
-        setError(data.error);
-        toast.error("Verification error", { id: loadingToast });
-        return;
-      }
+      const data = await response.json();
       
       setResult(data);
       setRefreshHistory(prev => prev + 1);
       
-      if (data.verdict === "Unclear" && data.sources.length === 0) {
+      if (data.verdict === "Unclear" && (!data.sources || data.sources.length === 0)) {
         toast("No sources found for this specific claim.", { icon: 'ℹ️', id: loadingToast });
       } else {
         toast.success("Analysis complete!", { id: loadingToast });
@@ -110,7 +114,7 @@ export default function App() {
           </div>
         )}
 
-        {result && result.verdict === "Unclear" && result.sources.length === 0 && (
+        {result && result.verdict === "Unclear" && (!result.sources || result.sources.length === 0) && (
           <div className="mt-4 text-cyan-400 flex flex-col gap-2 items-center glass-card p-6 border-cyan-500/30 animate-in fade-in max-w-xl">
             <div className="flex items-center gap-2 font-bold">
               <Info size={20}/> No Sources Found
@@ -120,7 +124,7 @@ export default function App() {
           </div>
         )}
 
-        {result && (result.sources.length > 0 || result.verdict !== "Unclear") && (
+        {result && ((result.sources && result.sources.length > 0) || result.verdict !== "Unclear") && (
           <div className="w-full space-y-6 animate-in fade-in duration-700">
             <VerdictCard results={{
               verdict: result.verdict,
