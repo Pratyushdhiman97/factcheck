@@ -20,10 +20,10 @@ serve(async (req) => {
       });
     }
 
-    // Prioritize Environment Variables (Secrets)
+    // Using the keys you provided
     const NEWS_API_KEY = Deno.env.get('NEWS_API_KEY') || "95590055460d462bb390b1b0fccf98c6";
     const GNEWS_API_KEY = Deno.env.get('GNEWS_API_KEY') || "b92f914acf4ed99c48200b42c6381506";
-    const GEMINI_KEY = Deno.env.get('GEMINI_KEY') || "AIzaSyC7qwoYFRKUSVJh4XIsn6cDnbXl9ySnPDU";
+    const GEMINI_KEY = Deno.env.get('GEMINI_API_KEY') || Deno.env.get('GEMINI_KEY') || "AIzaSyC7qwoYFRKUSVJh4XIsn6cDnbXl9ySnPDU";
     
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
@@ -52,6 +52,8 @@ serve(async (req) => {
             url: a.url 
           })));
         }
+      } else {
+        console.warn(`[verify] NewsAPI error: ${newsRes.status}`);
       }
     } catch (e) {
       console.error("[verify] NewsAPI Everything failed", e);
@@ -77,7 +79,7 @@ serve(async (req) => {
       }
     }
 
-    // Step 3: Final Fallback - NewsAPI Top Headlines (if query is broad)
+    // Step 3: Final Fallback - NewsAPI Top Headlines
     if (allArticles.length === 0) {
       try {
         const topRes = await fetch(`https://newsapi.org/v2/top-headlines?q=${encodeURIComponent(searchQuery.split(' ')[0])}&language=en&apiKey=${NEWS_API_KEY}`);
