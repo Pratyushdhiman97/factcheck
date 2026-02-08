@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ShieldCheck, WifiOff, Search, AlertCircle } from 'lucide-react';
+import { ShieldCheck, WifiOff, Search, AlertCircle, Info } from 'lucide-react';
 import { supabase } from './integrations/supabase/client';
 import toast from 'react-hot-toast';
 
@@ -44,29 +44,30 @@ export default function App() {
       });
 
       if (funcError) {
-        // Handle Supabase function invocation errors
-        const errorMsg = funcError.message || "Function invocation failed.";
-        setError(errorMsg);
-        toast.error(errorMsg, { id: loadingToast });
+        setError(funcError.message || "Function invocation failed.");
+        toast.error("Connection failed", { id: loadingToast });
         return;
       }
 
       if (data.error) {
-        // Handle errors returned from within the function logic
         setError(data.error);
-        toast.error(data.error, { id: loadingToast });
+        toast.error("Verification error", { id: loadingToast });
         return;
       }
       
       setResult(data);
       setRefreshHistory(prev => prev + 1);
-      toast.success("Analysis complete!", { id: loadingToast });
+      
+      if (data.verdict === "Unclear" && data.sources.length === 0) {
+        toast("No sources found for this specific claim.", { icon: 'ℹ️', id: loadingToast });
+      } else {
+        toast.success("Analysis complete!", { id: loadingToast });
+      }
 
     } catch (e) {
       console.error("Verification error:", e);
-      const errorMsg = e.message || "An unexpected error occurred.";
-      setError(errorMsg);
-      toast.error(errorMsg, { id: loadingToast });
+      setError(e.message || "An unexpected error occurred.");
+      toast.error("System error", { id: loadingToast });
     } finally {
       setIsAnalyzing(false);
     }
@@ -105,11 +106,21 @@ export default function App() {
               <AlertCircle size={20}/> Verification Error
             </div>
             <p className="text-sm text-center opacity-80">{error}</p>
-            <p className="text-xs mt-2 text-gray-500">If this persists, check your API usage limits or safety settings.</p>
+            <p className="text-xs mt-2 text-gray-500">Tip: Ensure your API keys are correctly set in Supabase Secrets.</p>
           </div>
         )}
 
-        {result && (
+        {result && result.verdict === "Unclear" && result.sources.length === 0 && (
+          <div className="mt-4 text-cyan-400 flex flex-col gap-2 items-center glass-card p-6 border-cyan-500/30 animate-in fade-in max-w-xl">
+            <div className="flex items-center gap-2 font-bold">
+              <Info size={20}/> No Sources Found
+            </div>
+            <p className="text-sm text-center opacity-80">{result.reason}</p>
+            <p className="text-xs mt-2 text-gray-500">Try a broader search or check if the topic is currently in the news.</p>
+          </div>
+        )}
+
+        {result && (result.sources.length > 0 || result.verdict !== "Unclear") && (
           <div className="w-full space-y-6 animate-in fade-in duration-700">
             <VerdictCard results={{
               verdict: result.verdict,
