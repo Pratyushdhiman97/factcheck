@@ -9,6 +9,7 @@ import VerdictCard from './components/VerdictCard';
 import MediaBiasCard from './components/MediaBiasCard';
 import FactLog from './components/FactLog';
 import SourceDossier from './components/SourceDossier';
+import HistoryLog from './components/HistoryLog';
 import Footer from './components/Footer';
 
 import './App.css';
@@ -23,6 +24,7 @@ export default function App() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
+  const [refreshHistory, setRefreshHistory] = useState(0);
 
   const performAudit = async () => {
     if (!input.trim()) return;
@@ -38,6 +40,7 @@ export default function App() {
 
       if (funcError) throw funcError;
       setResult(data);
+      setRefreshHistory(prev => prev + 1);
 
     } catch (e) {
       console.error("Verification error:", e);
@@ -53,8 +56,8 @@ export default function App() {
 
       <nav className="p-4 flex justify-between w-full max-w-5xl border-b border-white/10">
         <div className="flex items-center gap-2">
-          <ShieldCheck /> 
-          <span className="font-bold text-lg">VeriFact</span>
+          <ShieldCheck className="text-cyan-400" /> 
+          <span className="font-bold text-lg tracking-tighter">VERIFACT AI</span>
         </div>
       </nav>
 
@@ -71,13 +74,13 @@ export default function App() {
         <LiveStatus loading={isAnalyzing} />
 
         {error && (
-          <div className="mt-4 text-red-400 flex gap-2 items-center">
+          <div className="mt-4 text-red-400 flex gap-2 items-center glass-card p-4">
             <WifiOff size={16}/> {error}
           </div>
         )}
 
         {result && (
-          <>
+          <div className="w-full space-y-6 animate-in fade-in duration-700">
             <VerdictCard results={{
               verdict: result.verdict,
               confidence: result.confidence,
@@ -93,8 +96,10 @@ export default function App() {
             <FactLog facts={result.claims || []} />
 
             <SourceDossier sources={result.sources || []} />
-          </>
+          </div>
         )}
+
+        <HistoryLog refreshTrigger={refreshHistory} />
 
         <Footer />
       </main>

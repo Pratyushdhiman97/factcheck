@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts"
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -19,16 +20,13 @@ serve(async (req) => {
       });
     }
 
-    const GEMINI_KEY = Deno.env.get('GEMINI_KEY');
-    const NEWS_API_KEY = Deno.env.get('NEWS_API_KEY');
-
-    if (!GEMINI_KEY || !NEWS_API_KEY) {
-      console.error("[verify] Missing API keys");
-      return new Response(JSON.stringify({ error: 'Server configuration error' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    // Using provided keys
+    const NEWS_API_KEY = "95590055460d462bb390b1b0fccf98c6";
+    const GEMINI_KEY = "AIzaSyC7qwoYFRKUSVJh4XIsn6cDnbXl9ySnPDU";
+    
+    const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     // Step 1: Search NewsAPI
     console.log(`[verify] Searching news for: ${query}`);
@@ -73,7 +71,22 @@ serve(async (req) => {
     const resultText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
     const result = JSON.parse(resultText);
 
-    // Ensure sources are included from NewsAPI if Gemini didn't provide enough
+    // Step 3: Save to Database
+    console.log("[verify] Saving result to database");
+    const { error: dbError } = await supabase
+      .from('verifications')
+      .insert({
+        query: query,
+        verdict: result.verdict,
+        confidence: result.confidence,
+        trust_score: result.trust_score,
+        verifiable_score: result.verifiable_score,
+        bias_label: result.bias?.label
+      });
+
+    if (dbError) console.error("[verify] DB Error:", dbError);
+
+    // Ensure sources are included
     if (!result.sources || result.sources.length === 0) {
       result.sources = articles.map((a: any) => ({ name: a.source.name, url: a.url }));
     }
