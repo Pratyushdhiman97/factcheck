@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { ShieldCheck, WifiOff } from 'lucide-react';
+import { ShieldCheck, WifiOff, Search } from 'lucide-react';
 import { supabase } from './integrations/supabase/client';
+import toast from 'react-hot-toast';
 
 import Hero from './components/Hero';
 import InputSection from './components/InputSection';
@@ -27,11 +28,15 @@ export default function App() {
   const [refreshHistory, setRefreshHistory] = useState(0);
 
   const performAudit = async () => {
-    if (!input.trim()) return;
+    if (!input.trim()) {
+      toast.error("Please enter a claim to verify.");
+      return;
+    }
 
     setIsAnalyzing(true);
     setError(null);
     setResult(null);
+    const loadingToast = toast.loading("Analyzing claim across global sources...");
 
     try {
       const { data, error: funcError } = await supabase.functions.invoke('verify', {
@@ -39,29 +44,36 @@ export default function App() {
       });
 
       if (funcError) throw funcError;
+      
       setResult(data);
       setRefreshHistory(prev => prev + 1);
+      toast.success("Analysis complete!", { id: loadingToast });
 
     } catch (e) {
       console.error("Verification error:", e);
       setError("Verification engine encountered an error. Please check your API keys.");
+      toast.error("Verification failed. Check console for details.", { id: loadingToast });
     } finally {
       setIsAnalyzing(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-black text-white relative flex flex-col items-center justify-center">
+    <div className="min-h-screen bg-black text-white relative flex flex-col items-center">
       <NewspaperBackground />
 
-      <nav className="p-4 flex justify-between w-full max-w-5xl border-b border-white/10">
+      <nav className="p-4 flex justify-between w-full max-w-5xl border-b border-white/10 z-10">
         <div className="flex items-center gap-2">
           <ShieldCheck className="text-cyan-400" /> 
           <span className="font-bold text-lg tracking-tighter">VERIFACT AI</span>
         </div>
+        <div className="flex items-center gap-4 text-xs text-cyan-400/50">
+          <span className="flex items-center gap-1"><Search size={12}/> LIVE ENGINE</span>
+          <span className="flex items-center gap-1"><ShieldCheck size={12}/> SECURE</span>
+        </div>
       </nav>
 
-      <main className="app">
+      <main className="app z-10">
         <Hero />
 
         <InputSection
@@ -74,7 +86,7 @@ export default function App() {
         <LiveStatus loading={isAnalyzing} />
 
         {error && (
-          <div className="mt-4 text-red-400 flex gap-2 items-center glass-card p-4">
+          <div className="mt-4 text-red-400 flex gap-2 items-center glass-card p-4 animate-in fade-in slide-in-from-top-4">
             <WifiOff size={16}/> {error}
           </div>
         )}
