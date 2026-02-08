@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ShieldCheck, WifiOff, Search, AlertCircle, Info } from 'lucide-react';
+import { ShieldCheck, Search, AlertCircle, Info } from 'lucide-react';
 import { supabase } from './integrations/supabase/client';
 import toast from 'react-hot-toast';
 
@@ -15,6 +15,11 @@ import Footer from './components/Footer';
 
 import './App.css';
 import './animations.css';
+
+// Hardcoded keys for "Make it work now" mode
+const NEWS_API_KEY = "95590055460d462bb390b1b0fccf98c6";
+const GNEWS_API_KEY = "b92f914acf4ed99c48200b42c6381506";
+const GEMINI_KEY = "AIzaSyC7qwoYFRKUSVJh4XIsn6cDnbXl9ySnPDU";
 
 const NewspaperBackground = () => (
   <div className="fixed inset-0 pointer-events-none select-none z-0 opacity-[0.05]"></div>
@@ -36,41 +41,114 @@ export default function App() {
     setIsAnalyzing(true);
     setError(null);
     setResult(null);
-    const loadingToast = toast.loading("Analyzing claim across global sources...");
+    const loadingToast = toast.loading("Scanning global news archives...");
 
     try {
-      // Using the absolute URL for the Edge Function to ensure it works in Vercel
-      const FUNCTION_URL = "https://ffqlltuthkpbcjirsjbg.supabase.co/functions/v1/verify";
-      
-      const response = await fetch(FUNCTION_URL, {
+      // Step 1: Fetch News
+      const searchQuery = input.replace(/[^\w\s]/gi, '').split(' ').slice(0, 6).join(' ');
+      let articles = [];
+
+      try {
+        const newsRes = await fetch(`https://newsapi.org/v2/everything?q=${encodeURIComponent(searchQuery)}&language=en&sortBy=relevancy&pageSize=5&apiKey=${NEWS_API_KEY}`);
+        const newsData = await newsRes.json();
+        if (newsData.articles) {
+          articles.push(...newsData.articles.map(a => ({
+            title: a.title,
+            desc: a.description || "",
+            source: a.source.name,
+            url: a.url
+          })));
+        }
+      } catch (e) { console.warn("NewsAPI failed, trying GNews..."); }
+
+      if (articles.length === 0) {
+        try {
+          const gnewsRes = await fetch(`https://gnews.io/api/v4/search?q=${encodeURIComponent(searchQuery)}&lang=en&max=5&apikey=${GNEWS_API_KEY}`);
+          const gnewsData = await gnewsRes.json();
+          if (gnewsData.articles) {
+            articles.push(...gnewsData.articles.map(a => ({
+              title: a.title,
+              desc: a.description || "",
+              source: a.source.name,
+              url: a.url
+            })));
+          }
+        } catch (e) { console.warn("GNews failed."); }
+      }
+
+      if (articles.length === 0) {
+        setResult({
+          verdict: "Unclear",
+          reason: "No news articles found for this claim. This usually means the topic is not being reported by major news outlets.",
+          confidence: 0,
+          verifiable_score: 0,
+          trust_score: 0,
+          bias: { label: "Unknown", explanation: "No data available." },
+          tactics: ["No data"],
+          claims: [],
+          sources: []
+        });
+        toast("No sources found.", { icon: 'ℹ️', id: loadingToast });
+        setIsAnalyzing(false);
+        return;
+      }
+
+      // Step 2: AI Analysis via Gemini
+      const articleSnippets = articles.map(a => `[${a.source}] ${a.title}: ${a.desc}`).join('\n---\n');
+      const systemPrompt = `
+        Analyze this claim: "${input}"
+        Based on these news snippets:
+        ${articleSnippets}
+
+        Return ONLY a JSON object:
+        {
+          "verdict": "True" | "False" | "Unclear" | "Developing",
+          "reason": "Short explanation",
+          "confidence": 0-100,
+          "verifiable_score": 0-100,
+          "trust_score": 0-100,
+          "bias": { "label": "Left" | "Right" | "Neutral" | "Sensational", "explanation": "Why?" },
+          "tactics": ["Detected tactics"],
+          "claims": [{ "claim": "Sub-claim", "status": "Verified" | "Debunked" | "Unclear", "details": "Context" }],
+          "sources": [{ "name": "Source", "url": "URL" }]
+        }
+      `;
+
+      const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabase.supabaseKey}`,
-          'apikey': supabase.supabaseKey
-        },
-        body: JSON.stringify({ query: input }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: systemPrompt }] }],
+          generationConfig: { responseMimeType: "application/json", temperature: 0.1 },
+        }),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `Server responded with ${response.status}`);
+      const geminiData = await geminiRes.json();
+      const resultText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
+      const analysis = JSON.parse(resultText);
+
+      // Ensure sources are populated if AI missed them
+      if (!analysis.sources || analysis.sources.length === 0) {
+        analysis.sources = articles.slice(0, 5).map(a => ({ name: a.source, url: a.url }));
       }
 
-      const data = await response.json();
-      
-      setResult(data);
+      setResult(analysis);
       setRefreshHistory(prev => prev + 1);
-      
-      if (data.verdict === "Unclear" && (!data.sources || data.sources.length === 0)) {
-        toast("No sources found for this specific claim.", { icon: 'ℹ️', id: loadingToast });
-      } else {
-        toast.success("Analysis complete!", { id: loadingToast });
-      }
+      toast.success("Analysis complete!", { id: loadingToast });
+
+      // Save to History (Silent)
+      supabase.from('verifications').insert({
+        query: input,
+        verdict: analysis.verdict,
+        confidence: analysis.confidence,
+        trust_score: analysis.trust_score,
+        verifiable_score: analysis.verifiable_score,
+        bias_label: analysis.bias?.label
+      }).then(() => {});
 
     } catch (e) {
       console.error("Verification error:", e);
-      setError(e.message || "An unexpected error occurred.");
+      setError("The verification engine encountered an error. Please try again.");
       toast.error("System error", { id: loadingToast });
     } finally {
       setIsAnalyzing(false);
@@ -105,26 +183,15 @@ export default function App() {
         <LiveStatus loading={isAnalyzing} />
 
         {error && (
-          <div className="mt-4 text-red-400 flex flex-col gap-2 items-center glass-card p-6 border-red-500/30 animate-in fade-in slide-in-from-top-4 max-w-xl">
+          <div className="mt-4 text-red-400 flex flex-col gap-2 items-center glass-card p-6 border-red-500/30 animate-in fade-in max-w-xl">
             <div className="flex items-center gap-2 font-bold">
-              <AlertCircle size={20}/> Verification Error
+              <AlertCircle size={20}/> Error
             </div>
             <p className="text-sm text-center opacity-80">{error}</p>
-            <p className="text-xs mt-2 text-gray-500">Tip: Ensure your API keys are correctly set in Supabase Secrets.</p>
           </div>
         )}
 
-        {result && result.verdict === "Unclear" && (!result.sources || result.sources.length === 0) && (
-          <div className="mt-4 text-cyan-400 flex flex-col gap-2 items-center glass-card p-6 border-cyan-500/30 animate-in fade-in max-w-xl">
-            <div className="flex items-center gap-2 font-bold">
-              <Info size={20}/> No Sources Found
-            </div>
-            <p className="text-sm text-center opacity-80">{result.reason}</p>
-            <p className="text-xs mt-2 text-gray-500">Try a broader search or check if the topic is currently in the news.</p>
-          </div>
-        )}
-
-        {result && ((result.sources && result.sources.length > 0) || result.verdict !== "Unclear") && (
+        {result && (
           <div className="w-full space-y-6 animate-in fade-in duration-700">
             <VerdictCard results={{
               verdict: result.verdict,
@@ -138,9 +205,8 @@ export default function App() {
               narrativeTags={result.tactics || []}
             />
 
-            <FactLog facts={result.claims || []} />
-
-            <SourceDossier sources={result.sources || []} />
+            {result.claims && result.claims.length > 0 && <FactLog facts={result.claims} />}
+            {result.sources && result.sources.length > 0 && <SourceDossier sources={result.sources} />}
           </div>
         )}
 
