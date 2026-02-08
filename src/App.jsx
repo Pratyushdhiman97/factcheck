@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import {
-  ShieldCheck, WifiOff
-} from 'lucide-react';
+import { ShieldCheck, WifiOff } from 'lucide-react';
+import { supabase } from './integrations/supabase/client';
 
 import Hero from './components/Hero';
 import InputSection from './components/InputSection';
@@ -20,7 +19,7 @@ const NewspaperBackground = () => (
 );
 
 export default function App() {
-  const [input, setInput] = useState('');
+  const [input, setQuery] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
@@ -33,24 +32,16 @@ export default function App() {
     setResult(null);
 
     try {
-      const res = await fetch("http://localhost:5000/api/verify", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ query: input })
+      const { data, error: funcError } = await supabase.functions.invoke('verify', {
+        body: { query: input },
       });
 
-      if (!res.ok) {
-        throw new Error("Backend error");
-      }
-
-      const data = await res.json();
-
+      if (funcError) throw funcError;
       setResult(data);
 
     } catch (e) {
-      setError("Verification engine offline");
+      console.error("Verification error:", e);
+      setError("Verification engine encountered an error. Please check your API keys.");
     } finally {
       setIsAnalyzing(false);
     }
@@ -60,7 +51,6 @@ export default function App() {
     <div className="min-h-screen bg-black text-white relative flex flex-col items-center justify-center">
       <NewspaperBackground />
 
-      {/* NAVBAR */}
       <nav className="p-4 flex justify-between w-full max-w-5xl border-b border-white/10">
         <div className="flex items-center gap-2">
           <ShieldCheck /> 
@@ -68,13 +58,12 @@ export default function App() {
         </div>
       </nav>
 
-      {/* MAIN APP */}
       <main className="app">
         <Hero />
 
         <InputSection
           query={input}
-          setQuery={setInput}
+          setQuery={setQuery}
           handleVerify={performAudit}
           loading={isAnalyzing}
         />
@@ -97,7 +86,7 @@ export default function App() {
             }} />
 
             <MediaBiasCard
-              mediaBias={result.bias?.label}
+              mediaBias={result.bias?.label || 'Neutral'}
               narrativeTags={result.tactics || []}
             />
 
