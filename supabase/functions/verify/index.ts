@@ -20,41 +20,54 @@ serve(async (req) => {
       });
     }
 
-    // Using provided keys
+    // Provided API Keys
     const NEWS_API_KEY = "95590055460d462bb390b1b0fccf98c6";
+    const GNEWS_API_KEY = "b92f914acf4ed99c48200b42c6381506";
     const GEMINI_KEY = "AIzaSyC7qwoYFRKUSVJh4XIsn6cDnbXl9ySnPDU";
     
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    // Step 1: Search NewsAPI
-    console.log(`[verify] Searching news for: ${query}`);
-    const newsUrl = `https://newsapi.org/v2/everything?q=${encodeURIComponent(query)}&language=en&sortBy=relevancy&pageSize=5&apiKey=${NEWS_API_KEY}`;
-    const newsRes = await fetch(newsUrl);
-    const newsData = await newsRes.json();
-    const articles = newsData.articles || [];
-    const articleSnippets = articles.map((a: any) => `${a.title} — ${a.description}`).join('\n');
+    console.log(`[verify] Cross-referencing news for: ${query}`);
 
-    // Step 2: Call Gemini
-    console.log("[verify] Calling Gemini for analysis");
+    // Step 1: Fetch from NewsAPI
+    const newsRes = await fetch(`https://newsapi.org/v2/everything?q=${encodeURIComponent(query)}&language=en&sortBy=relevancy&pageSize=5&apiKey=${NEWS_API_KEY}`);
+    const newsData = await newsRes.json();
+    
+    // Step 2: Fetch from GNews
+    const gnewsRes = await fetch(`https://gnews.io/api/v4/search?q=${encodeURIComponent(query)}&lang=en&max=5&apikey=${GNEWS_API_KEY}`);
+    const gnewsData = await gnewsRes.json();
+
+    const allArticles = [
+      ...(newsData.articles || []).map((a: any) => ({ title: a.title, desc: a.description, source: a.source.name, url: a.url })),
+      ...(gnewsData.articles || []).map((a: any) => ({ title: a.title, desc: a.description, source: a.source.name, url: a.url }))
+    ];
+
+    const articleSnippets = allArticles.map(a => `[${a.source}] ${a.title}: ${a.desc}`).join('\n---\n');
+
+    // Step 3: AI Analysis
+    console.log("[verify] Analyzing with Gemini 1.5 Flash");
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`;
     const systemPrompt = `
-      You are a non-partisan fact checker.
+      You are a professional fact-checker. Analyze the following claim based on the provided news snippets.
+      
       Claim: "${query}"
-      Articles: ${articleSnippets}
+      
+      Context from News Sources:
+      ${articleSnippets}
 
-      Return STRICT JSON:
+      Return a valid JSON object with this structure:
       {
-        "verdict": "True/False/Unclear/Confirmed",
-        "reason": "string",
-        "confidence": number,
-        "verifiable_score": number,
-        "trust_score": number,
-        "bias": { "label": "string", "explanation": "string" },
-        "tactics": ["string"],
-        "claims": [{ "claim": "string", "status": "Verified/Debunked/Unclear", "details": "string" }],
-        "sources": [{ "name": "string", "url": "string" }]
+        "verdict": "True" | "False" | "Unclear" | "Developing",
+        "reason": "Short explanation",
+        "confidence": 0-100,
+        "verifiable_score": 0-100,
+        "trust_score": 0-100,
+        "bias": { "label": "Left" | "Right" | "Neutral" | "Sensational", "explanation": "Why?" },
+        "tactics": ["List of media tactics detected"],
+        "claims": [{ "claim": "Specific sub-claim", "status": "Verified" | "Debunked" | "Unclear", "details": "Context" }],
+        "sources": [{ "name": "Source Name", "url": "URL" }]
       }
     `;
 
@@ -71,24 +84,19 @@ serve(async (req) => {
     const resultText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
     const result = JSON.parse(resultText);
 
-    // Step 3: Save to Database
-    console.log("[verify] Saving result to database");
-    const { error: dbError } = await supabase
-      .from('verifications')
-      .insert({
-        query: query,
-        verdict: result.verdict,
-        confidence: result.confidence,
-        trust_score: result.trust_score,
-        verifiable_score: result.verifiable_score,
-        bias_label: result.bias?.label
-      });
+    // Step 4: Save to History
+    await supabase.from('verifications').insert({
+      query: query,
+      verdict: result.verdict,
+      confidence: result.confidence,
+      trust_score: result.trust_score,
+      verifiable_score: result.verifiable_score,
+      bias_label: result.bias?.label
+    });
 
-    if (dbError) console.error("[verify] DB Error:", dbError);
-
-    // Ensure sources are included
+    // Ensure sources are populated
     if (!result.sources || result.sources.length === 0) {
-      result.sources = articles.map((a: any) => ({ name: a.source.name, url: a.url }));
+      result.sources = allArticles.slice(0, 5).map(a => ({ name: a.source, url: a.url }));
     }
 
     return new Response(JSON.stringify(result), {
@@ -97,7 +105,7 @@ serve(async (req) => {
 
   } catch (error) {
     console.error("[verify] Error:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: "Verification failed. Please try again." }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
